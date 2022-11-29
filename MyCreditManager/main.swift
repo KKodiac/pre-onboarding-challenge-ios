@@ -18,6 +18,21 @@ protocol CreditManager {
     func quit()
 }
 
+enum ActionInput: String {
+    case appendStudentActionInput = "1"
+    case removeStudentActionInput = "2"
+    case appendCreditActionInput = "3"
+    case removeCreditActionInput = "4"
+    case peekActionInput = "5"
+    case quitActionInput = "X"
+}
+
+extension String {
+    var isAlphabet: Bool {
+        return range(of: "[a-zA-Z]", options: .regularExpression) != nil
+    }
+}
+
 class MyCreditManager: CreditManager {
     var creditRecord: [String: [String: String]] = [:]
     let creditToGPA: [String: Float] = ["A+": 4.5, "A": 4.0, "B+": 3.5, "B": 3.0, "C+": 2.5, "C": 2.0, "D+": 1.5, "D": 1.0, "F": 0.0]
@@ -38,14 +53,14 @@ class MyCreditManager: CreditManager {
         print(Message.appendCreditMessage.messageDescription!)
         guard let data = readLine() else { return }
         let appendData = data.split(separator: " ").map{ String($0) }
-        append(data: appendData)
+        append(appendData)
     }
     
     func removeCredit() {
         print(Message.removeCreditMessage.messageDescription!)
         guard let data = readLine() else { return }
         let removeData = data.split(separator: " ").map{ String($0) }
-        remove(data: removeData)
+        remove(removeData)
     }
     
     func peekCredit() {
@@ -58,23 +73,25 @@ class MyCreditManager: CreditManager {
     func mainLoop() {
         while true {
             print(Message.mainMessage.messageDescription!)
-            guard let actionInput = readLine() else { continue }
-            switch actionInput {
-            case "1":
-                self.appendStudent()
-            case "2":
-                self.removeStudent()
-            case "3":
-                self.appendCredit()
-            case "4":
-                self.removeCredit()
-            case "5":
-                self.peekCredit()
-            case "X":
-                self.quit()
-            default:
-                print(Message.mainErrorMessage.messageDescription!)
-            }
+            if let rawInput = readLine() {
+                let actionInput = ActionInput(rawValue: rawInput)
+                switch actionInput {
+                case .appendStudentActionInput :
+                    self.appendStudent()
+                case .removeStudentActionInput:
+                    self.removeStudent()
+                case .appendCreditActionInput:
+                    self.appendCredit()
+                case .removeCreditActionInput:
+                    self.removeCredit()
+                case .peekActionInput:
+                    self.peekCredit()
+                case .quitActionInput:
+                    self.quit()
+                default:
+                    print(Message.mainErrorMessage.messageDescription!)
+                }
+            } else { continue }
         }
     }
     
@@ -91,8 +108,8 @@ class MyCreditManager: CreditManager {
      - 이미 존재하는 학생은 다시 추가하지 않습니다. */
     private func append(_ name: String) {
         do {
-            let name = try validateStudentName(name: name)
-            try insertNewNameToRecord(name: name)
+            let name = try validateStudentName(name)
+            try insertRecord(with: name)
         } catch let error as Error {
             print(error.errorDescription!)
         } catch {
@@ -103,13 +120,13 @@ class MyCreditManager: CreditManager {
     /* 성적추가
      - 메뉴를 선택한 후에도 잘못 입력한 것이 있으면 처리해 주어야합니다.
      - 없는 학생의 성적은 추가하지 않습니다. */
-    private func append(data: [String]) {
+    private func append(_ data: [String]) {
         do {
             if data.count < 3 { throw Error.notEnoughInput }
-            let name = try validateStudentName(name: data[0])
-            let course = try validateCourseName(course: data[1])
-            let credit = try validateCredit(credit: data[2])
-            try insertCourseAndCreditToRecord(by: name, course: course, credit: credit)
+            let name = try validateStudentName(data[0])
+            let course = try validateCourseName(data[1])
+            let credit = try validateCreditName(data[2])
+            try insertRecord(with: name, course, credit)
         } catch let error as Error {
             print(error.errorDescription!)
         } catch {
@@ -123,8 +140,8 @@ class MyCreditManager: CreditManager {
      - 없는 학생은 삭제하지 않습니다. */
     private func remove(_ name: String) {
         do {
-            let name = try validateStudentName(name: name)
-            try removeStudentFromRecord(name: name)
+            let name = try validateStudentName(name)
+            try removeRecord(with: name)
         } catch let error as Error {
             print(error.errorDescription!)
         } catch {
@@ -135,12 +152,12 @@ class MyCreditManager: CreditManager {
     /* 성적삭제
      - 메뉴를 선택한 후에도 잘못 입력한 것이 있으면 처리해 주어야합니다.
      - 없는 학생의 성적은 삭제하지 않습니다. */
-    private func remove(data: [String]) {
+    private func remove(_ data: [String]) {
         do {
             if data.count < 2 { throw Error.notEnoughInput }
-            let name = try validateStudentName(name: data[0])
-            let course = try validateCourseName(course: data[1])
-            try removeCourseFromRecord(name: name, course: course)
+            let name = try validateStudentName(data[0])
+            let course = try validateCourseName(data[1])
+            try removeRecord(with: name, course)
         } catch let error as Error {
             print(error.errorDescription!)
         } catch {
@@ -154,7 +171,7 @@ class MyCreditManager: CreditManager {
      - 없는 학생은 평점을 보여주지 않습니다. */
     private func peek(_ name: String) {
         do {
-            let name = try validateStudentName(name: name)
+            let name = try validateStudentName(name)
             try showAllCourses(by: name)
         } catch let error as Error {
             print(error.errorDescription!)
@@ -165,74 +182,59 @@ class MyCreditManager: CreditManager {
     
     // MARK: Private Helper Functions
     
-    private func validateStudentName(name: String) throws -> String{
-        if name.count == 0 {
-            throw Error.invalidNameEmpty
-        } else {
-            for character in name {
-                if !("a"..."z" ~= character) && !("A"..."Z" ~= character) {
-                    throw Error.invalidName(name)
-                }
-            }
+    private func validateStudentName(_ name: String) throws -> String {
+        if name.isEmpty || !name.isAlphabet {
+            throw Error.invalidName
         }
         return name
     }
     
-    private func validateCourseName(course: String) throws -> String{
-        for character in course {
-            if !(" "..."~" ~= character) {
-                throw Error.invalidCourse(course)
-            }
+    private func validateCourseName(_ course: String) throws -> String {
+        if course.isEmpty || !course.isAlphabet {
+            throw Error.invalidCourse(course)
         }
         return course
     }
     
-    private func validateCredit(credit: String) throws -> String{
-        if (creditToGPA[credit] == nil) {
+    private func validateCreditName(_ credit: String) throws -> String {
+        if creditToGPA[credit] == nil {
             throw Error.invalidCredit(credit)
         }
         return credit
     }
     
-    
-    private func insertNewNameToRecord(name: String) throws {
-        if creditRecord.contains(where: { $0.key == name }) {
+    private func insertRecord(with name: String) throws {
+        if isValidRecord(name) {
             throw Error.nameRecordExists(name)
-        } else {
-            creditRecord[name] = [:]
-            print(Message.insertCompletionMessage(name).messageDescription!)
         }
+        creditRecord[name] = [:]
+        print(Message.insertCompletionMessage(name).messageDescription!)
     }
     
-    private func insertCourseAndCreditToRecord(by name: String, course: String, credit: String) throws {
-        if creditRecord[name] != nil {
-            creditRecord[name]![course] = credit
-            print(Message.insertCompletionMessages(name, course, credit).messageDescription!)
-        } else {
-            throw Error.nameRecordNotFound(name)
+    private func insertRecord(with name: String, _ course: String, _ credit: String) throws {
+        if !isValidRecord(name) {
+            throw Error.recordNotFound
         }
+        creditRecord[name]![course] = credit
+        print(Message.insertCompletionMessages(name, course, credit).messageDescription!)
     }
     
-    private func removeCourseFromRecord(name: String, course: String) throws {
-        if creditRecord[name] != nil {
-            if creditRecord[name]![course] != nil {
-                creditRecord[name]!.removeValue(forKey: course)
-                print(Message.removeCompletionMessages(name, course).messageDescription!)
-            } else {
-                throw Error.courseRecordNotFound(name, course)
-            }
-        } else {
-            throw Error.nameRecordNotFound(name)
+    
+    private func removeRecord(with name: String, _ course: String) throws {
+        if !isValidRecord(name, course) {
+            throw Error.recordNotFound
         }
+        creditRecord[name]!.removeValue(forKey: course)
+        print(Message.removeCompletionMessages(name, course).messageDescription!)
     }
     
-    private func removeStudentFromRecord(name: String) throws {
-        if creditRecord[name] != nil {
-            creditRecord.removeValue(forKey: name)
-            print(Message.removeCompletionMessage(name).messageDescription!)
-        } else {
-            throw Error.nameRecordNotFound(name)
+    
+    private func removeRecord(with name: String) throws {
+        if !isValidRecord(name) {
+            throw Error.recordNotFound
         }
+        creditRecord.removeValue(forKey: name)
+        print(Message.removeCompletionMessage(name).messageDescription!)
     }
     
     private func showAllCourses(by name: String) throws {
@@ -243,7 +245,7 @@ class MyCreditManager: CreditManager {
             let average = calculateAverageCredit(with: courses)
             print(Message.showAverageCredit(average).messageDescription!)
         } else {
-            throw Error.nameRecordNotFound(name)
+            throw Error.recordNotFound
         }
     }
     
@@ -257,6 +259,14 @@ class MyCreditManager: CreditManager {
         return totalGPA / Float(courses.count)
     }
     
+    private func isValidRecord(_ key: String) -> Bool {
+        return creditRecord.contains(where: { $0.key == key })
+    }
+    
+    private func isValidRecord(_ name: String, _ course: String) -> Bool {
+        guard let nameRecord = creditRecord[name] else { return false }
+        return nameRecord.contains(where: { $0.key == course })
+    }
 }
 
 let main = MyCreditManager()
